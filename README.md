@@ -8,7 +8,7 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
 - uses: actions/checkout@v2
 
 - name: Terraform
-  uses: ./.github/actions/terraform
+  uses: wemogy/terraform
   id: terraform
   with:
     working-directory: env/terraform
