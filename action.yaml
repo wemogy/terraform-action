@@ -1,4 +1,4 @@
-name: Terraform for wemogy
+name: wemogy Terraform
 author: wemogy
 description: Connects to a Terraform backend, applies or plans the changes and outputs the Terraform Output variables
 branding:
