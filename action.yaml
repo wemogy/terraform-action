@@ -1,0 +1,88 @@
+name: Terraform
+author: wemogy
+description: Connects to a Terraform backend, applies or plans the changes and outputs the Terraform Output variables
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+
+inputs:
+  working-directory:
+    required: true
+    description: "The directory of your terraform scripts"
+  workspace:
+    description: "The terraform workspace"
+    required: false
+  apply:
+    description: "Apply the changes"
+    default: "true"
+    required: true
+  client-id:
+    description: "The Azure Service Pricipal Client ID"
+    required: true
+  client-secret:
+    description: "The Azure Service Pricipal Secret"
+    required: true
+  tenant-id:
+    description: "The Azure Service Pricipal Tenant ID"
+    required: true
+  arm-access-key:
+    description: "The Access Key to the Azure Storage Account that hosts the remote Terraform backend"
+    required: true
+
+outputs:
+  output:
+    description: "The Terraform output in JSON format"
+    value: ${{ steps.terraform-output.outputs.output }}
+
+runs:
+  using: "composite"
+  steps:
+    # Initialize terraform
+    - name: Init Terraform
+      run: terraform init
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
+
+    # Switch terraform workspace
+    - name: Switch to dev workspace
+      run: |
+        if [[ "${{ inputs.workspace }}" != "" ]]; then
+          echo "Switching workspace to ${{ inputs.workspace }}..."
+          terraform workspace select ${{ inputs.workspace }}
+        fi
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
+
+    # Apply the terraform changes
+    - name: Apply / Plan terraform
+      run: |
+        if [[ "${{ inputs.apply }}" == "true" ]]; then
+          echo "Running terraform apply..."
+          terraform apply -auto-approve
+        else
+          echo "Running terraform plan..."
+          terraform plan
+        fi
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ARM_CLIENT_ID: ${{ inputs.client-id }}
+        ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
+        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
+        ARM_TENANT_ID: ${{ inputs.tenant-id }}
+
+    # Export terraform outputs to output of this job
+    - name: Terraform Output
+      id: terraform-output
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        TERRAFORM_OUTPUT=$(terraform output --json | jq -c .)
+        echo "::set-output name=output::$TERRAFORM_OUTPUT"
+      shell: bash
+      env:
+        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
