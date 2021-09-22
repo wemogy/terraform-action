@@ -8,14 +8,17 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
 - uses: actions/checkout@v2
 
 - name: Terraform
-  uses: wemogy/terraform-action@1.0.0
+  uses: wemogy/terraform-action@1.1.0
   id: terraform
   with:
     working-directory: env/terraform
     client-id: ${{ secrets.AZURE_APP_ID }}
     client-secret: ${{ secrets.AZURE_PASSWORD }}
     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-    arm-access-key: ${{ secrets.TERRAFORM_BACKEND_ACCESS_KEY }}
+    backend-storage-account-name: myterraformstorage
+    backend-container-name: terraform-state
+    backend-key: terraform.tfstate
+    backend-access-key: ${{ secrets.TERRAFORM_BACKEND_ACCESS_KEY }}
 
 - run: echo ${{ fromJSON(steps.terraform.outputs.output).my_output.value }}
 ```
