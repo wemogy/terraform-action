@@ -67,6 +67,8 @@ runs:
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
 
     # Apply the terraform changes
     - name: Apply / Plan terraform
@@ -84,6 +86,7 @@ runs:
         ARM_CLIENT_ID: ${{ inputs.client-id }}
         ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
         ARM_TENANT_ID: ${{ inputs.tenant-id }}
+        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
 
     # Export terraform outputs to output of this job
     - name: Terraform Output
@@ -93,3 +96,5 @@ runs:
         TERRAFORM_OUTPUT=$(terraform output --json | jq -c .)
         echo "::set-output name=output::$TERRAFORM_OUTPUT"
       shell: bash
+      env:
+        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
