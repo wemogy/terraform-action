@@ -25,8 +25,17 @@ inputs:
   tenant-id:
     description: "The Azure Service Pricipal Tenant ID"
     required: true
-  arm-access-key:
-    description: "The Access Key to the Azure Storage Account that hosts the remote Terraform backend"
+  backend-storage-account-name:
+    description: "The Name of the Azure Storage Account that hosts the remote Terraform backend"
+    required: true
+  backend-container-name:
+    description: "The Name of the the storage container that hosts the remote Terraform backend"
+    required: true
+  backend-key:
+    description: "The name of the file that hosts the remote Terraform backend"
+    required: true
+  backend-access-key:
+    description: "The ARM Access Key to the Azure Storage Account that hosts the remote Terraform backend"
     required: true
 
 outputs:
@@ -39,11 +48,15 @@ runs:
   steps:
     # Initialize terraform
     - name: Init Terraform
-      run: terraform init
+      run: |
+        terraform init \
+          -backend-config="storage_account_name=${{ inputs.backend-storage-account-name }}" \          
+          -backend-config="container_name=${{ inputs.backend-container-name }}" \
+          -backend-config="key=${{ inputs.backend-key }}"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
+        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
 
     # Switch terraform workspace
     - name: Switch to dev workspace
@@ -54,8 +67,6 @@ runs:
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
 
     # Apply the terraform changes
     - name: Apply / Plan terraform
@@ -72,7 +83,6 @@ runs:
       env:
         ARM_CLIENT_ID: ${{ inputs.client-id }}
         ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
-        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
         ARM_TENANT_ID: ${{ inputs.tenant-id }}
 
     # Export terraform outputs to output of this job
@@ -83,5 +93,3 @@ runs:
         TERRAFORM_OUTPUT=$(terraform output --json | jq -c .)
         echo "::set-output name=output::$TERRAFORM_OUTPUT"
       shell: bash
-      env:
-        ARM_ACCESS_KEY: ${{ inputs.arm-access-key }}
