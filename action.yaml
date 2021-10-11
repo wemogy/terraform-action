@@ -12,6 +12,10 @@ inputs:
   workspace:
     description: "The terraform workspace"
     required: false
+  plan:
+    description: "Plan the changes"
+    default: "false"
+    required: true
   apply:
     description: "Apply the changes"
     default: "true"
@@ -74,12 +78,13 @@ runs:
     # Apply the terraform changes
     - name: Apply / Plan terraform
       run: |
+        if [[ "${{ inputs.plan }}" == "true" ]]; then
+          echo "Running terraform plan..."
+          terraform plan
+        fi
         if [[ "${{ inputs.apply }}" == "true" ]]; then
           echo "Running terraform apply..."
           terraform apply -auto-approve
-        else
-          echo "Running terraform plan..."
-          terraform plan
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
