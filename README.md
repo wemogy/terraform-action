@@ -8,7 +8,7 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
 - uses: actions/checkout@v2
 
 - name: Terraform
-  uses: wemogy/terraform-action@1.1.0
+  uses: wemogy/terraform-action@1.2.0
   id: terraform
   with:
     working-directory: env/terraform
@@ -29,7 +29,8 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
 | ------------------- | ------------------------------------------------------------------------------------------------ |
 | `working-directory` | **Required** The directory of your terraform scripts                                             |
 | `workspace`         | The terraform workspace                                                                          |
-| `apply`             | Apply the changes. If set to "false", only a Terraform plan will be executed. Defaults to "true" |
+| `plan `             | Plan the changes. Defaults to "false"                                                            |
+| `apply`             | Apply the changes. Defaults to "true"                                                            |
 | `client-id`         | **Required** The Azure Service Pricipal Client ID                                                |
 | `client-secret`     | **Required** The Azure Service Pricipal Secret                                                   |
 | `tenant-id`         | **Required** The Azure Service Pricipal Tenant ID                                                |
