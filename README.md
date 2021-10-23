@@ -31,6 +31,7 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
 | `workspace`         | The terraform workspace                                                                          |
 | `plan `             | Plan the changes. Defaults to "false"                                                            |
 | `apply`             | Apply the changes. Defaults to "true"                                                            |
+| `destroy`           | Destroy the changes. Defaults to "false". Does not work, when `apply` is set to `true`.          |
 | `client-id`         | **Required** The Azure Service Pricipal Client ID                                                |
 | `client-secret`     | **Required** The Azure Service Pricipal Secret                                                   |
 | `tenant-id`         | **Required** The Azure Service Pricipal Tenant ID                                                |
