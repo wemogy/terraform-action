@@ -20,6 +20,10 @@ inputs:
     description: "Apply the changes"
     default: "true"
     required: true
+  destroy:
+    description: "Destroy the changes"
+    default: "false"
+    required: true
   client-id:
     description: "The Azure Service Pricipal Client ID"
     required: true
@@ -75,8 +79,8 @@ runs:
       env:
         ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
 
-    # Apply the terraform changes
-    - name: Apply / Plan terraform
+    # Plan the terraform changes
+    - name: Plan terraform
       run: |
         if [[ "${{ inputs.plan }}" == "true" ]]; then
           echo "Running terraform plan..."
@@ -93,6 +97,24 @@ runs:
         ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
         ARM_TENANT_ID: ${{ inputs.tenant-id }}
         ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
+        
+    # Apply / Destroy
+    - name: Apply / Destroy terraform
+      run: |
+        if [[ "${{ inputs.apply }}" == "true" ]]; then
+          echo "Running terraform apply..."
+          terraform plan
+        elif [[ "${{ inputs.destroy }}" == "true" ]]; then
+          echo "Running terraform destroy..."
+          terraform destroy -auto-approve
+        fi
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ARM_CLIENT_ID: ${{ inputs.client-id }}
+        ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
+        ARM_TENANT_ID: ${{ inputs.tenant-id }}
+        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}         
 
     # Export terraform outputs to output of this job
     - name: Terraform Output
