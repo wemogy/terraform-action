@@ -24,6 +24,10 @@ inputs:
     description: "Destroy the changes"
     default: "false"
     required: true
+  force:
+    description: "Enforce changes, even if prevent_destroy is set to 'true'"
+    default: "false"
+    required: true   
   client-id:
     description: "The Azure Service Pricipal Client ID"
     required: true
@@ -54,6 +58,17 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # Check if 'force' is set.
+    # If so, this script replace s'prevent_destroy = true' with 'prevent_destroy = false' in all .tf files
+    # see: https://notes.rioastamal.net/2020/03/terraform-force-destroy-resource-when-prevent-destroy-true.html
+    - name: Check if force is set
+      run: |
+        if [[ "${{ inputs.force }}" == "true" ]]; then
+          find . -name '*.tf' -type f -exec perl -i -pe 's@prevent_destroy = true@prevent_destroy = false@g' {} \;
+        fi
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}   
+  
     # Initialize terraform
     - name: Init Terraform
       run: |
