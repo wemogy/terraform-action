@@ -102,10 +102,6 @@ runs:
           echo "Running terraform plan..."
           terraform plan
         fi
-        if [[ "${{ inputs.apply }}" == "true" ]]; then
-          echo "Running terraform apply..."
-          terraform apply -auto-approve
-        fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
