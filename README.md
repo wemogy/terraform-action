@@ -8,7 +8,7 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
 - uses: actions/checkout@v2
 
 - name: Terraform
-  uses: wemogy/terraform-action@1.6.0
+  uses: wemogy/terraform-action@1.6.2
   id: terraform
   with:
     working-directory: env/terraform
@@ -36,7 +36,7 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
 | `client-id`         | **Required** The Azure Service Pricipal Client ID                                                |
 | `client-secret`     | **Required** The Azure Service Pricipal Secret                                                   |
 | `tenant-id`         | **Required** The Azure Service Pricipal Tenant ID                                                |
-| `arm-access-key`    | **Required** The Access Key to the Azure Storage Account that hosts the remote Terraform backend |
+| `backend-access-key`    | **Required** The Access Key to the Azure Storage Account that hosts the remote Terraform backend |
 
 ## Outputs
 
