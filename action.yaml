@@ -2,8 +2,8 @@ name: Terraform (wemogy)
 author: wemogy
 description: Connects to a Terraform backend, applies or plans the changes and outputs the Terraform Output variables
 branding:
-  icon: 'upload-cloud'
-  color: 'blue'
+  icon: "upload-cloud"
+  color: "blue"
 
 inputs:
   working-directory:
@@ -27,7 +27,7 @@ inputs:
   force:
     description: "Enforce changes, even if prevent_destroy is set to 'true'"
     default: "false"
-    required: true   
+    required: true
   client-id:
     description: "The Azure Service Pricipal Client ID"
     required: true
@@ -67,8 +67,12 @@ runs:
           find . -name '*.tf' -type f -exec perl -i -pe 's@prevent_destroy = true@prevent_destroy = false@g' {} \;
         fi
       shell: bash
-      working-directory: ${{ inputs.working-directory }}   
-  
+      working-directory: ${{ inputs.working-directory }}
+
+    # Setup terraform
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
     # Initialize terraform
     - name: Init Terraform
       run: |
@@ -109,7 +113,7 @@ runs:
         ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
         ARM_TENANT_ID: ${{ inputs.tenant-id }}
         ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
-        
+
     # Apply / Destroy
     - name: Apply / Destroy terraform
       run: |
@@ -126,7 +130,7 @@ runs:
         ARM_CLIENT_ID: ${{ inputs.client-id }}
         ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
         ARM_TENANT_ID: ${{ inputs.tenant-id }}
-        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}         
+        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
 
     # Export terraform outputs to output of this job
     - name: Terraform Output
