@@ -46,9 +46,6 @@ inputs:
   backend-key:
     description: "The name of the file that hosts the remote Terraform backend"
     required: true
-  backend-access-key:
-    description: "The ARM Access Key to the Azure Storage Account that hosts the remote Terraform backend"
-    required: true
 
 outputs:
   output:
@@ -73,6 +70,21 @@ runs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
 
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: '{"clientId":"${{ inputs.client-id }}","clientSecret":"${{ inputs.client-secret }}","tenantId":"${{ inputs.tenant-id }}"}'
+
+    # Export Azure Storage Account Access Key
+    - name: Export Azure Storage Account Access Key
+      id: export-access-key
+      uses: azure/cli@v2
+      with:
+        azcliversion: latest
+        inlineScript: |
+          key=$(az storage account keys list --account-name ${{ inputs.backend-storage-account-name }} -o tsv --query '[0].value')
+          echo "ARM_ACCESS_KEY=$key" >> $GITHUB_ENV
+
     # Initialize terraform
     - name: Init Terraform
       run: |
@@ -85,7 +97,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
+        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Switch terraform workspace
     - name: Switch to dev workspace
@@ -97,7 +109,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
+        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Plan the terraform changes
     - name: Plan terraform
@@ -109,10 +121,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ARM_CLIENT_ID: ${{ inputs.client-id }}
-        ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
-        ARM_TENANT_ID: ${{ inputs.tenant-id }}
-        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
+        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Apply / Destroy
     - name: Apply / Destroy terraform
@@ -127,10 +136,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ARM_CLIENT_ID: ${{ inputs.client-id }}
-        ARM_CLIENT_SECRET: ${{ inputs.client-secret }}
-        ARM_TENANT_ID: ${{ inputs.tenant-id }}
-        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
+        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Export terraform outputs to output of this job
     - name: Terraform Output
@@ -141,4 +147,4 @@ runs:
         echo "::set-output name=output::$TERRAFORM_OUTPUT"
       shell: bash
       env:
-        ARM_ACCESS_KEY: ${{ inputs.backend-access-key }}
+        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
