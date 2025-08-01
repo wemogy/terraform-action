@@ -145,7 +145,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: |
         TERRAFORM_OUTPUT=$(terraform output --json | jq -c .)
-        echo "::set-output name=output::$TERRAFORM_OUTPUT"
+        echo "output=$TERRAFORM_OUTPUT" >> $GITHUB_OUTPUT
       shell: bash
       env:
         ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
