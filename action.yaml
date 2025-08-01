@@ -73,6 +73,7 @@ runs:
     - name: Azure Login
       uses: azure/login@v2
       with:
+        allow-no-subscriptions: true
         creds: '{"clientId":"${{ inputs.client-id }}","clientSecret":"${{ inputs.client-secret }}","tenantId":"${{ inputs.tenant-id }}"}'
 
     # Export Azure Storage Account Access Key
