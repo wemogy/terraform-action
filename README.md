@@ -64,6 +64,26 @@ Leaving `client-secret` empty switches the action into OIDC mode automatically.
 - run: echo ${{ fromJSON(steps.terraform.outputs.output).my_output.value }}
 ```
 
+## Passing Terraform input variables
+
+The action runs Terraform with `-input=false`, so any declared variable without a
+value or default will cause the run to fail (instead of hanging on an interactive
+prompt). Provide your Terraform variables via `TF_VAR_<name>` environment variables on
+the step — they are inherited by the action's Terraform commands automatically:
+
+```yaml
+- name: Terraform
+  uses: wemogy/terraform-action@1.6.2
+  env:
+    TF_VAR_azure_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  with:
+    working-directory: env/terraform
+    client-id: ${{ vars.AZURE_CLIENT_ID }}
+    tenant-id: ${{ vars.AZURE_TENANT_ID }}
+    subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    # ...
+```
+
 ## Inputs
 
 | Input               | Description                                                                                      |

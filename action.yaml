@@ -139,7 +139,7 @@ runs:
       run: |
         if [[ "${{ inputs.plan }}" == "true" ]]; then
           echo "Running terraform plan..."
-          terraform plan
+          terraform plan -input=false
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
@@ -149,10 +149,10 @@ runs:
       run: |
         if [[ "${{ inputs.apply }}" == "true" ]]; then
           echo "Running terraform apply..."
-          terraform apply -auto-approve
+          terraform apply -auto-approve -input=false
         elif [[ "${{ inputs.destroy }}" == "true" ]]; then
           echo "Running terraform destroy..."
-          terraform destroy -auto-approve
+          terraform destroy -auto-approve -input=false
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
