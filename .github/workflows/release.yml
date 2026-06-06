@@ -24,6 +24,7 @@ jobs:
         with:
           git-username: wemogy-admin
           git-email: it@wemogy.com
+          prefix: ""
 
       - name: Create GitHub Release
         if: steps.version.outputs.tag-created == 'true'
