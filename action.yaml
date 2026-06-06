@@ -29,14 +29,19 @@ inputs:
     default: "false"
     required: true
   client-id:
-    description: "The Azure Service Pricipal Client ID"
+    description: "The Azure Service Principal / Managed Identity Client ID"
     required: true
   client-secret:
-    description: "The Azure Service Pricipal Secret"
-    required: true
+    description: "The Azure Service Principal Secret. Leave empty to authenticate via OIDC (federated credentials)."
+    required: false
+    default: ""
   tenant-id:
-    description: "The Azure Service Pricipal Tenant ID"
+    description: "The Azure Service Principal Tenant ID"
     required: true
+  subscription-id:
+    description: "The Azure Subscription ID. Required when authenticating via OIDC."
+    required: false
+    default: ""
   backend-storage-account-name:
     description: "The Name of the Azure Storage Account that hosts the remote Terraform backend"
     required: true
@@ -70,21 +75,41 @@ runs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
 
-    - name: Azure Login
+    # Authenticate via OIDC (federated credentials) when no client secret is provided.
+    # The consuming workflow must grant the `id-token: write` permission for this to work.
+    - name: Azure Login (OIDC)
+      if: ${{ inputs.client-secret == '' }}
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
+
+    # Authenticate via a Service Principal client secret (legacy).
+    - name: Azure Login (Client Secret)
+      if: ${{ inputs.client-secret != '' }}
       uses: azure/login@v2
       with:
         allow-no-subscriptions: true
         creds: '{"clientId":"${{ inputs.client-id }}","clientSecret":"${{ inputs.client-secret }}","tenantId":"${{ inputs.tenant-id }}"}'
 
-    # Export Azure Storage Account Access Key
-    - name: Export Azure Storage Account Access Key
-      id: export-access-key
-      uses: azure/cli@v2
-      with:
-        azcliversion: latest
-        inlineScript: |
-          key=$(az storage account keys list --account-name ${{ inputs.backend-storage-account-name }} -o tsv --query '[0].value')
-          echo "ARM_ACCESS_KEY=$key" >> $GITHUB_ENV
+    # Expose the credentials to Terraform's azurerm provider and backend.
+    # The backend authenticates against the state storage account via Azure AD (use_azuread_auth),
+    # so no storage account access key is needed. OIDC additionally requires ARM_USE_OIDC.
+    - name: Configure Terraform Azure credentials
+      shell: bash
+      run: |
+        echo "ARM_CLIENT_ID=${{ inputs.client-id }}" >> "$GITHUB_ENV"
+        echo "ARM_TENANT_ID=${{ inputs.tenant-id }}" >> "$GITHUB_ENV"
+        echo "ARM_USE_AZUREAD=true" >> "$GITHUB_ENV"
+        if [[ -n "${{ inputs.subscription-id }}" ]]; then
+          echo "ARM_SUBSCRIPTION_ID=${{ inputs.subscription-id }}" >> "$GITHUB_ENV"
+        fi
+        if [[ -z "${{ inputs.client-secret }}" ]]; then
+          echo "ARM_USE_OIDC=true" >> "$GITHUB_ENV"
+        else
+          echo "ARM_CLIENT_SECRET=${{ inputs.client-secret }}" >> "$GITHUB_ENV"
+        fi
 
     # Initialize terraform
     - name: Init Terraform
@@ -94,11 +119,10 @@ runs:
           -reconfigure \
           -backend-config="storage_account_name=${{ inputs.backend-storage-account-name }}" \
           -backend-config="container_name=${{ inputs.backend-container-name }}" \
-          -backend-config="key=${{ inputs.backend-key }}"
+          -backend-config="key=${{ inputs.backend-key }}" \
+          -backend-config="use_azuread_auth=true"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Switch terraform workspace
     - name: Switch to dev workspace
@@ -109,8 +133,6 @@ runs:
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Plan the terraform changes
     - name: Plan terraform
@@ -121,8 +143,6 @@ runs:
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Apply / Destroy
     - name: Apply / Destroy terraform
@@ -136,8 +156,6 @@ runs:
         fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}
 
     # Export terraform outputs to output of this job
     - name: Terraform Output
@@ -147,5 +165,3 @@ runs:
         TERRAFORM_OUTPUT=$(terraform output --json | jq -c .)
         echo "output=$TERRAFORM_OUTPUT" >> $GITHUB_OUTPUT
       shell: bash
-      env:
-        ARM_ACCESS_KEY: ${{ env.ARM_ACCESS_KEY }}

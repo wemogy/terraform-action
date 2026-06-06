@@ -2,10 +2,52 @@
 
 A GitHub Action that connects to a remote Terraform backend in Azure, applies or plans the changes and outputs the Terraform Output variables. Currently only works for Microsoft Azure.
 
+The action authenticates against the state storage account via Azure AD (`use_azuread_auth`) — no storage account access key is required.
+
+> [!CAUTION]
+> The identity (Service Principal or federated/OIDC identity) needs a **data-plane** role such as **Storage Blob Data Contributor** on the backend storage account or container. Control-plane roles like _Contributor_ or _Owner_ are **not** sufficient — `terraform init` will fail with a `403` on the state blob if this role is missing.
+
 ## Usage
 
+### OIDC (recommended)
+
+For every branch a federated credential is created with the subject
+`repo:wemogy/<repository_name>:ref:refs/heads/<branch>`. The identity's client ID,
+tenant ID and subscription ID (but **no** client secret) are distributed to the target
+repository as the `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`
+variables.
+
+The consuming workflow logs in via OIDC, so it needs the `id-token: write` permission:
+
 ```yaml
-- uses: actions/checkout@v2
+permissions:
+  id-token: write
+  contents: read
+
+steps:
+  - uses: actions/checkout@v4
+
+  - name: Terraform
+    uses: wemogy/terraform-action@1.6.2
+    id: terraform
+    with:
+      working-directory: env/terraform
+      client-id: ${{ vars.AZURE_CLIENT_ID }}
+      tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      backend-storage-account-name: myterraformstorage
+      backend-container-name: terraform-state
+      backend-key: terraform.tfstate
+
+  - run: echo ${{ fromJSON(steps.terraform.outputs.output).my_output.value }}
+```
+
+Leaving `client-secret` empty switches the action into OIDC mode automatically.
+
+### Client secret (legacy)
+
+```yaml
+- uses: actions/checkout@v4
 
 - name: Terraform
   uses: wemogy/terraform-action@1.6.2
@@ -18,25 +60,24 @@ A GitHub Action that connects to a remote Terraform backend in Azure, applies or
     backend-storage-account-name: myterraformstorage
     backend-container-name: terraform-state
     backend-key: terraform.tfstate
-    backend-access-key: ${{ secrets.TERRAFORM_BACKEND_ACCESS_KEY }}
 
 - run: echo ${{ fromJSON(steps.terraform.outputs.output).my_output.value }}
 ```
 
 ## Inputs
 
-| Input                | Description                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| `working-directory`  | **Required** The directory of your terraform scripts                                             |
-| `workspace`          | The terraform workspace                                                                          |
-| `plan `              | Plan the changes. Defaults to "false"                                                            |
-| `apply`              | Apply the changes. Defaults to "true"                                                            |
-| `destroy`            | Destroy the changes. Defaults to "false". Does not work, when `apply` is set to `true`.          |
-| `force`.             | "Enforce changes, even if prevent_destroy is set to 'true'"                                      |
-| `client-id`          | **Required** The Azure Service Pricipal Client ID                                                |
-| `client-secret`      | **Required** The Azure Service Pricipal Secret                                                   |
-| `tenant-id`          | **Required** The Azure Service Pricipal Tenant ID                                                |
-| `backend-access-key` | **Required** The Access Key to the Azure Storage Account that hosts the remote Terraform backend |
+| Input               | Description                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `working-directory` | **Required** The directory of your terraform scripts                                             |
+| `workspace`         | The terraform workspace                                                                          |
+| `plan`              | Plan the changes. Defaults to "false"                                                            |
+| `apply`             | Apply the changes. Defaults to "true"                                                            |
+| `destroy`           | Destroy the changes. Defaults to "false". Does not work, when `apply` is set to `true`.          |
+| `force`             | Enforce changes, even if prevent_destroy is set to 'true'                                        |
+| `client-id`         | **Required** The Azure Service Principal / Managed Identity Client ID                            |
+| `client-secret`     | The Azure Service Principal Secret. Leave empty to authenticate via OIDC (federated credentials) |
+| `tenant-id`         | **Required** The Azure Service Principal Tenant ID                                               |
+| `subscription-id`   | The Azure Subscription ID. Required when authenticating via OIDC                                 |
 
 ## Outputs
 
