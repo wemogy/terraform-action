@@ -89,7 +89,8 @@ the step — they are inherited by the action's Terraform commands automatically
 The action is tuned to keep the overhead around `terraform apply` small:
 
 - **Provider cache** – downloaded providers are cached with `actions/cache`, keyed on
-  your `.terraform.lock.hcl`. Commit the lock file for the most stable cache hits
+  your `.terraform.lock.hcl`. Terraform only uses cached providers that are verified by a
+  committed lock file, so **commit `.terraform.lock.hcl`** to benefit from the cache
   (`terraform providers lock -platform=linux_amd64` adds the hashes for the GitHub runner).
 - **No implicit upgrade** – `terraform init` uses the provider versions from the lock
   file. Set `upgrade: true` to get the old `terraform init -upgrade` behavior.

@@ -120,10 +120,9 @@ runs:
             echo "ARM_CLIENT_SECRET=$CLIENT_SECRET"
           fi
           if [[ "$CACHE_PROVIDERS" == "true" ]]; then
+            # Terraform only uses cached providers that match the checksums in a committed
+            # .terraform.lock.hcl, so lock file verification stays fully intact.
             echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache"
-            # The runner is ephemeral, so the lock file written in CI is never persisted.
-            # This lets Terraform use cached providers even when no lock file is committed.
-            echo "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE=true"
           fi
         } >> "$GITHUB_ENV"
         if [[ "$CACHE_PROVIDERS" == "true" ]]; then
@@ -133,7 +132,8 @@ runs:
     # Restore / save the provider plugin cache, so providers like azurerm (~100 MB)
     # are not downloaded from the registry on every run.
     - name: Cache Terraform providers
-      if: ${{ inputs.cache-providers == 'true' }}
+      # Without a committed lock file Terraform would not use the cache, so skip it entirely.
+      if: ${{ inputs.cache-providers == 'true' && hashFiles(format('{0}/**/.terraform.lock.hcl', inputs.working-directory)) != '' }}
       uses: actions/cache@v4
       with:
         path: ~/.terraform.d/plugin-cache
@@ -223,7 +223,6 @@ runs:
         if [[ -n "$PLAN_FILE" ]]; then
           echo "Applying saved plan..."
           terraform apply -input=false "$PLAN_FILE"
-          rm -f "$PLAN_FILE"
         elif [[ "$APPLY" == "true" ]]; then
           echo "Running terraform apply..."
           terraform apply -auto-approve -input=false
@@ -231,6 +230,15 @@ runs:
           echo "Running terraform destroy..."
           terraform destroy -auto-approve -input=false
         fi
+
+    # Saved plans contain variable values and resource data in cleartext, so remove the plan
+    # file even when planning / applying failed or the run was cancelled.
+    - name: Remove saved plan
+      if: ${{ always() && steps.plan.outputs.file != '' }}
+      shell: bash
+      env:
+        PLAN_FILE: ${{ steps.plan.outputs.file }}
+      run: rm -f "$PLAN_FILE"
 
     # Export terraform outputs to output of this job
     - name: Terraform Output
