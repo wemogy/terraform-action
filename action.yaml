@@ -51,6 +51,22 @@ inputs:
   backend-key:
     description: "The name of the file that hosts the remote Terraform backend"
     required: true
+  terraform-version:
+    description: "The Terraform CLI version to install (e.g. '1.14.0' or '~1.14'). Pinning a version skips the 'latest' lookup and makes runs reproducible."
+    required: false
+    default: "latest"
+  cache-providers:
+    description: "Cache downloaded Terraform providers between runs (keyed on .terraform.lock.hcl)"
+    required: false
+    default: "true"
+  upgrade:
+    description: "Run 'terraform init -upgrade' to pick the newest provider/module versions allowed by the constraints instead of the versions recorded in .terraform.lock.hcl"
+    required: false
+    default: "false"
+  azure-cli-login:
+    description: "Also log in to the Azure CLI. Terraform does not need this (it authenticates via ARM_* environment variables); only enable it if your Terraform code calls the 'az' CLI (e.g. in local-exec provisioners or external data sources)."
+    required: false
+    default: "false"
 
 outputs:
   output:
@@ -61,107 +77,166 @@ runs:
   using: "composite"
   steps:
     # Check if 'force' is set.
-    # If so, this script replace s'prevent_destroy = true' with 'prevent_destroy = false' in all .tf files
+    # If so, this script replaces 'prevent_destroy = true' with 'prevent_destroy = false' in all .tf files
     # see: https://notes.rioastamal.net/2020/03/terraform-force-destroy-resource-when-prevent-destroy-true.html
-    - name: Check if force is set
-      run: |
-        if [[ "${{ inputs.force }}" == "true" ]]; then
-          find . -name '*.tf' -type f -exec perl -i -pe 's@prevent_destroy = true@prevent_destroy = false@g' {} \;
-        fi
+    - name: Remove prevent_destroy (force)
+      if: ${{ inputs.force == 'true' }}
+      run: find . -name '*.tf' -type f -exec perl -i -pe 's@prevent_destroy = true@prevent_destroy = false@g' {} \;
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
-    # Setup terraform
+    # Setup terraform. The wrapper is disabled: it adds a Node.js process around every
+    # terraform call and its stdout/stderr outputs are not used by this action.
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
 
-    # Authenticate via OIDC (federated credentials) when no client secret is provided.
-    # The consuming workflow must grant the `id-token: write` permission for this to work.
-    - name: Azure Login (OIDC)
-      if: ${{ inputs.client-secret == '' }}
+    # Expose the credentials to Terraform's azurerm provider and backend.
+    # The backend authenticates against the state storage account via Azure AD (use_azuread_auth),
+    # so no storage account access key is needed. With ARM_USE_OIDC, Terraform requests the
+    # GitHub OIDC token itself, so no Azure CLI login is required.
+    - name: Configure Terraform environment
+      shell: bash
+      env:
+        CLIENT_ID: ${{ inputs.client-id }}
+        CLIENT_SECRET: ${{ inputs.client-secret }}
+        TENANT_ID: ${{ inputs.tenant-id }}
+        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+        CACHE_PROVIDERS: ${{ inputs.cache-providers }}
+      run: |
+        {
+          echo "TF_IN_AUTOMATION=true"
+          echo "ARM_CLIENT_ID=$CLIENT_ID"
+          echo "ARM_TENANT_ID=$TENANT_ID"
+          echo "ARM_USE_AZUREAD=true"
+          if [[ -n "$SUBSCRIPTION_ID" ]]; then
+            echo "ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID"
+          fi
+          if [[ -z "$CLIENT_SECRET" ]]; then
+            echo "ARM_USE_OIDC=true"
+          else
+            echo "ARM_CLIENT_SECRET=$CLIENT_SECRET"
+          fi
+          if [[ "$CACHE_PROVIDERS" == "true" ]]; then
+            echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache"
+            # The runner is ephemeral, so the lock file written in CI is never persisted.
+            # This lets Terraform use cached providers even when no lock file is committed.
+            echo "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE=true"
+          fi
+        } >> "$GITHUB_ENV"
+        if [[ "$CACHE_PROVIDERS" == "true" ]]; then
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+        fi
+
+    # Restore / save the provider plugin cache, so providers like azurerm (~100 MB)
+    # are not downloaded from the registry on every run.
+    - name: Cache Terraform providers
+      if: ${{ inputs.cache-providers == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.terraform.d/plugin-cache
+        key: terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/**/.terraform.lock.hcl', inputs.working-directory)) }}
+        restore-keys: |
+          terraform-providers-${{ runner.os }}-${{ runner.arch }}-
+
+    # Only needed when the Terraform code itself calls the az CLI.
+    - name: Azure CLI Login (OIDC)
+      if: ${{ inputs.azure-cli-login == 'true' && inputs.client-secret == '' }}
       uses: azure/login@v2
       with:
         client-id: ${{ inputs.client-id }}
         tenant-id: ${{ inputs.tenant-id }}
         subscription-id: ${{ inputs.subscription-id }}
 
-    # Authenticate via a Service Principal client secret (legacy).
-    - name: Azure Login (Client Secret)
-      if: ${{ inputs.client-secret != '' }}
+    - name: Azure CLI Login (Client Secret)
+      if: ${{ inputs.azure-cli-login == 'true' && inputs.client-secret != '' }}
       uses: azure/login@v2
       with:
         allow-no-subscriptions: true
         creds: '{"clientId":"${{ inputs.client-id }}","clientSecret":"${{ inputs.client-secret }}","tenantId":"${{ inputs.tenant-id }}"}'
 
-    # Expose the credentials to Terraform's azurerm provider and backend.
-    # The backend authenticates against the state storage account via Azure AD (use_azuread_auth),
-    # so no storage account access key is needed. OIDC additionally requires ARM_USE_OIDC.
-    - name: Configure Terraform Azure credentials
-      shell: bash
-      run: |
-        echo "ARM_CLIENT_ID=${{ inputs.client-id }}" >> "$GITHUB_ENV"
-        echo "ARM_TENANT_ID=${{ inputs.tenant-id }}" >> "$GITHUB_ENV"
-        echo "ARM_USE_AZUREAD=true" >> "$GITHUB_ENV"
-        if [[ -n "${{ inputs.subscription-id }}" ]]; then
-          echo "ARM_SUBSCRIPTION_ID=${{ inputs.subscription-id }}" >> "$GITHUB_ENV"
-        fi
-        if [[ -z "${{ inputs.client-secret }}" ]]; then
-          echo "ARM_USE_OIDC=true" >> "$GITHUB_ENV"
-        else
-          echo "ARM_CLIENT_SECRET=${{ inputs.client-secret }}" >> "$GITHUB_ENV"
-        fi
-
     # Initialize terraform
     - name: Init Terraform
-      run: |
-        terraform init \
-          -upgrade \
-          -reconfigure \
-          -backend-config="storage_account_name=${{ inputs.backend-storage-account-name }}" \
-          -backend-config="container_name=${{ inputs.backend-container-name }}" \
-          -backend-config="key=${{ inputs.backend-key }}" \
-          -backend-config="use_azuread_auth=true"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        BACKEND_STORAGE_ACCOUNT_NAME: ${{ inputs.backend-storage-account-name }}
+        BACKEND_CONTAINER_NAME: ${{ inputs.backend-container-name }}
+        BACKEND_KEY: ${{ inputs.backend-key }}
+        UPGRADE: ${{ inputs.upgrade }}
+      run: |
+        args=(-input=false -reconfigure)
+        if [[ "$UPGRADE" == "true" ]]; then
+          args+=(-upgrade)
+        fi
+        terraform init "${args[@]}" \
+          -backend-config="storage_account_name=$BACKEND_STORAGE_ACCOUNT_NAME" \
+          -backend-config="container_name=$BACKEND_CONTAINER_NAME" \
+          -backend-config="key=$BACKEND_KEY" \
+          -backend-config="use_azuread_auth=true"
 
     # Switch terraform workspace
-    - name: Switch to dev workspace
-      run: |
-        if [[ "${{ inputs.workspace }}" != "" ]]; then
-          echo "Switching workspace to ${{ inputs.workspace }}..."
-          terraform workspace select ${{ inputs.workspace }}
-        fi
+    - name: Switch workspace
+      if: ${{ inputs.workspace != '' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        WORKSPACE: ${{ inputs.workspace }}
+      run: |
+        echo "Switching workspace to $WORKSPACE..."
+        terraform workspace select "$WORKSPACE"
 
-    # Plan the terraform changes
+    # Plan the terraform changes. When an apply / destroy follows, the plan is saved and
+    # applied as-is, so Terraform does not refresh and plan a second time.
     - name: Plan terraform
-      run: |
-        if [[ "${{ inputs.plan }}" == "true" ]]; then
-          echo "Running terraform plan..."
-          terraform plan -input=false
-        fi
+      id: plan
+      if: ${{ inputs.plan == 'true' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        APPLY: ${{ inputs.apply }}
+        DESTROY: ${{ inputs.destroy }}
+      run: |
+        args=(-input=false)
+        if [[ "$APPLY" != "true" && "$DESTROY" == "true" ]]; then
+          args+=(-destroy)
+        fi
+        if [[ "$APPLY" == "true" || "$DESTROY" == "true" ]]; then
+          plan_file="$(mktemp "$RUNNER_TEMP/terraform-XXXXXX.tfplan")"
+          args+=("-out=$plan_file")
+          echo "file=$plan_file" >> "$GITHUB_OUTPUT"
+        fi
+        echo "Running terraform plan..."
+        terraform plan "${args[@]}"
 
     # Apply / Destroy
     - name: Apply / Destroy terraform
+      if: ${{ inputs.apply == 'true' || inputs.destroy == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        APPLY: ${{ inputs.apply }}
+        PLAN_FILE: ${{ steps.plan.outputs.file }}
       run: |
-        if [[ "${{ inputs.apply }}" == "true" ]]; then
+        if [[ -n "$PLAN_FILE" ]]; then
+          echo "Applying saved plan..."
+          terraform apply -input=false "$PLAN_FILE"
+          rm -f "$PLAN_FILE"
+        elif [[ "$APPLY" == "true" ]]; then
           echo "Running terraform apply..."
           terraform apply -auto-approve -input=false
-        elif [[ "${{ inputs.destroy }}" == "true" ]]; then
+        else
           echo "Running terraform destroy..."
           terraform destroy -auto-approve -input=false
         fi
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
 
     # Export terraform outputs to output of this job
     - name: Terraform Output
       id: terraform-output
       working-directory: ${{ inputs.working-directory }}
       run: |
-        TERRAFORM_OUTPUT=$(terraform output --json | jq -c .)
-        echo "output=$TERRAFORM_OUTPUT" >> $GITHUB_OUTPUT
+        TERRAFORM_OUTPUT=$(terraform output -json | jq -c .)
+        echo "output=$TERRAFORM_OUTPUT" >> "$GITHUB_OUTPUT"
       shell: bash

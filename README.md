@@ -84,6 +84,28 @@ the step — they are inherited by the action's Terraform commands automatically
     # ...
 ```
 
+## Performance
+
+The action is tuned to keep the overhead around `terraform apply` small:
+
+- **Provider cache** – downloaded providers are cached with `actions/cache`, keyed on
+  your `.terraform.lock.hcl`. Commit the lock file for the most stable cache hits
+  (`terraform providers lock -platform=linux_amd64` adds the hashes for the GitHub runner).
+- **No implicit upgrade** – `terraform init` uses the provider versions from the lock
+  file. Set `upgrade: true` to get the old `terraform init -upgrade` behavior.
+- **No Azure CLI login** – Terraform authenticates on its own via the `ARM_*`
+  environment variables (including OIDC), so the Azure CLI is only logged in when
+  `azure-cli-login: true` is set.
+- **Plan once** – with `plan: true` and `apply: true` (or `destroy: true`), the plan is
+  saved and applied as-is instead of being computed a second time.
+- **Pinned Terraform** – set `terraform-version` to skip the "latest" lookup and get
+  reproducible runs.
+
+If a run spends a long time in the apply phase even though nothing changed in your code,
+check the plan output for attributes that change on every run (drift), and consider
+`resource_provider_registrations = "none"` in your `azurerm` provider block to skip
+the resource provider registration check at provider start-up.
+
 ## Inputs
 
 | Input               | Description                                                                                      |
@@ -98,6 +120,13 @@ the step — they are inherited by the action's Terraform commands automatically
 | `client-secret`     | The Azure Service Principal Secret. Leave empty to authenticate via OIDC (federated credentials) |
 | `tenant-id`         | **Required** The Azure Service Principal Tenant ID                                               |
 | `subscription-id`   | The Azure Subscription ID. Required when authenticating via OIDC                                 |
+| `backend-storage-account-name` | **Required** The name of the Azure Storage Account that hosts the remote Terraform backend |
+| `backend-container-name` | **Required** The name of the storage container that hosts the remote Terraform backend |
+| `backend-key`       | **Required** The name of the state file in the backend container                                 |
+| `terraform-version` | The Terraform CLI version to install. Defaults to "latest"                                       |
+| `cache-providers`   | Cache downloaded providers between runs (keyed on `.terraform.lock.hcl`). Defaults to "true"     |
+| `upgrade`           | Run `terraform init -upgrade` instead of using the versions from `.terraform.lock.hcl`. Defaults to "false" |
+| `azure-cli-login`   | Also log in to the Azure CLI (only needed if your Terraform code calls `az`). Defaults to "false" |
 
 ## Outputs
 
